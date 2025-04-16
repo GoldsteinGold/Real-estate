@@ -1,0 +1,92 @@
+import streamlit as st
+import sqlite3
+import pandas as pd
+import plotly.express as px
+from sklearn.linear_model import LinearRegression
+
+# ---------- DATABASE SETUP ----------
+conn = sqlite3.connect('properties.db', check_same_thread=False)
+c = conn.cursor()
+c.execute('''
+    CREATE TABLE IF NOT EXISTS properties (
+        address TEXT,
+        price REAL,
+        rent REAL,
+        sqft REAL,
+        bedrooms INTEGER,
+        bathrooms INTEGER
+    )
+''')
+conn.commit()
+
+# ---------- APP HEADER ----------
+st.set_page_config(page_title="🏡 Real Estate Tracker AI", layout="wide")
+st.markdown("""
+    <style>
+        body {
+            background-color: #fff5f8;
+        }
+        .stApp {
+            background-color: #fff5f8;
+        }
+        .css-1d391kg {
+            background-color: #fff5f8;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("💗 Real Estate Investment Tracker with AI")
+st.markdown("Track your properties, visualize performance, and predict future prices 💹")
+
+# ---------- SIDEBAR FORM ----------
+st.sidebar.header("📥 Add a Property")
+with st.sidebar.form("property_form"):
+    address = st.text_input("Property Address")
+    price = st.number_input("Purchase Price", min_value=0)
+    rent = st.number_input("Monthly Rent", min_value=0)
+    sqft = st.number_input("Square Footage", min_value=0)
+    bedrooms = st.number_input("Bedrooms", min_value=0, step=1)
+    bathrooms = st.number_input("Bathrooms", min_value=0, step=1)
+    submitted = st.form_submit_button("Add Property")
+
+    if submitted and address:
+        c.execute("INSERT INTO properties VALUES (?, ?, ?, ?, ?, ?)",
+                  (address, price, rent, sqft, bedrooms, bathrooms))
+        conn.commit()
+        st.success(f"✅ {address} added successfully!")
+
+# ---------- LOAD DATA ----------
+c.execute("SELECT * FROM properties")
+data = pd.DataFrame(c.fetchall(), columns=['address', 'price', 'rent', 'sqft', 'bedrooms', 'bathrooms'])
+
+if not data.empty:
+    st.subheader("📊 Portfolio Overview")
+    data['annual_rent'] = data['rent'] * 12
+    data['roi'] = round((data['annual_rent'] / data['price']) * 100, 2)
+
+    st.dataframe(data)
+
+    # ---------- VISUALIZATION ----------
+    st.plotly_chart(px.bar(data, x='address', y='roi', color='roi', title="💰 ROI per Property"))
+
+    # ---------- AI PREDICTION ----------
+    st.subheader("🧠 AI Price Prediction")
+    model = LinearRegression()
+    X = data[['sqft', 'bedrooms', 'bathrooms']]
+    y = data['price']
+    model.fit(X, y)
+
+    st.markdown("**Predict a New Property's Price:**")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        sqft_input = st.number_input("Sqft", min_value=0)
+    with col2:
+        bed_input = st.number_input("Bedrooms", min_value=0, step=1)
+    with col3:
+        bath_input = st.number_input("Bathrooms", min_value=0, step=1)
+
+    if st.button("Predict Price"):
+        pred_price = model.predict([[sqft_input, bed_input, bath_input]])[0]
+        st.success(f"🏷️ Estimated Price: ${round(pred_price, 2):,}")
+else:
+    st.warning("No properties yet. Add some on the left to get started!")
